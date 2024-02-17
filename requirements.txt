@@ -3,7 +3,7 @@ pandas
 pyarrow
 scipy
 matplotlib
-astropy[recommended]
+astropy
 astroquery
 astroML
 scikit-learn
@@ -14,3 +14,4 @@ s3fs
 urllib3==2.0.7
 seaborn
 specutils
+pytest

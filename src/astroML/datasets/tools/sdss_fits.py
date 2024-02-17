@@ -15,9 +15,10 @@ from src.astroML.datasets.tools.download import download_with_progress_bar
 # FITS_FILENAME = 'spSpec-%(mjd)05i-%(plate)04i-%(fiber)03i.fit'
 # SDSS_URL = ('http://das.sdss.org/spectro/1d_26/%(plate)04i/'
 #             '1d/spSpec-%(mjd)05i-%(plate)04i-%(fiber)03i.fit')
+
 SDSS_URL = ('https://data.sdss.org/sas/dr16/eboss/spectro/redux/v5_13_0/spectra/lite/%(plate)04i/'
-            'spec-%(plate)04i-%(mjd)05i-%(fiber)03i.fits')
-FITS_FILENAME = 'spec-%(plate)04i-%(mjd)05i-%(fiber)03i.fits'
+            'spec-%(plate)04i-%(mjd)05i-%(fiber)04i.fits')
+FITS_FILENAME = 'spec-%(plate)04i-%(mjd)05i-%(fiber)04i.fits'
 
 # lines used to generate line-index labeling
 LINES = dict(Ha=6564.61,
@@ -67,12 +68,15 @@ class SDSSfits:
     ``hdulist``.  For details, please refer to the data description:
     http://www.sdss.org/dr7/dm/flatFiles/spSpec.html
     """
-
-    def __init__(self, source=None):
+    def __init__(self, z, sdss_class, source=None):
+        # NOTE: adding this line, will break local import
+        # source = str(source)
+        self.z = z
+        self.sdss_class = sdss_class
         if source is None:
             pass
         elif isinstance(source, str):
-            if source.startswith('http://'):
+            if source.startswith('https://'):
                 self._load_fits_url(source)
             else:
                 self._load_fits_file(source)
@@ -85,30 +89,29 @@ class SDSSfits:
         buffer = download_with_progress_bar(url, return_buffer=True)
         self._initialize(fits.open(buffer))
 
-    def _load_fits_file(self, df):
+    def _load_fits_file(self, file_or_buffer):
         # fits is an optional dependency: don't import globally
         from astropy.io import fits
-        from astropy.sdss import SDSS
-        self._initialize(SDSS.get_spectra(plate = df.PLATE, mjd = df.MJD, fiberID = df.FIBERID)[0],
-                df = df)
+        self._initialize(fits.open(file_or_buffer))
 
 
-    def _initialize(self, hdulist, df):
-        data = hdulist['COADD'].data
+    def _initialize(self, hdulist):
+        data = hdulist[1].data
 
         self.name = hdulist[0].header['NAME']
         # self.spec_cln = hdulist[0].header['SPEC_CLN']
-        self['class'] = df['class']
+        # self.sdss_class = sdss_class
         self.coeff0 = hdulist[0].header['COEFF0']
         self.coeff1 = hdulist[0].header['COEFF1']
-        self.z = df['Z']
+        # self.z = z
         # self.zerr = hdulist[0].header['Z_ERR']
         # self.zconf = hdulist[0].header['Z_CONF']
 
         self.spectrum = data['flux']
         self.spectrum_cont = data['loglam']
         self.error = np.sqrt(np.abs(1/data['ivar']))
-        self.mask = data['and_mask']
+        self.mask = 0
+        # self.mask = data['and_mask'] # NOTE: should figure out the masking at some point
         self.large_err = self.error.max() * 2
         self.hdulist = hdulist
 
@@ -122,9 +125,9 @@ class SDSSfits:
             gc.collect()
 
     def copy(self):
-        snew = self.__class__()
-        for param in ['name', 'spec_cln', 'coeff0', 'coeff1',
-                      'z', 'zerr', 'zconf', 'spectrum', 'spectrum_cont',
+        snew = self.__class__(z=self.z, sdss_class=self.sdss_class)
+        for param in ['name', 'coeff0', 'coeff1',
+                      'z', 'spectrum', 'spectrum_cont',
                       'error', 'large_err', 'mask', 'hdulist']:
             setattr(snew, param, getattr(self, param))
         return snew
@@ -241,132 +244,132 @@ class SDSSfits:
 
         return snew
 
-    def _get_line_strength(self, line):
-        lam = LINES.get(line)
-        if lam is None:
-            lam1 = LINES.get(line + 'a')
-            ind1 = np.where(abs(self.hdulist[2].data['restWave']
-                                - lam1) < 1)[0]
+#     def _get_line_strength(self, line):
+#         lam = LINES.get(line)
+#         if lam is None:
+#             lam1 = LINES.get(line + 'a')
+#             ind1 = np.where(abs(self.hdulist[2].data['restWave']
+#                                 - lam1) < 1)[0]
 
-            lam2 = LINES.get(line + 'b')
-            ind2 = np.where(abs(self.hdulist[2].data['restWave']
-                                - lam2) < 1)[0]
+#             lam2 = LINES.get(line + 'b')
+#             ind2 = np.where(abs(self.hdulist[2].data['restWave']
+#                                 - lam2) < 1)[0]
 
-            if len(ind1) == 0:
-                s1 = h1 = 0
-                nsig1 = 0
-            else:
-                s1 = self.hdulist[2].data['sigma'][ind1]
-                h1 = self.hdulist[2].data['height'][ind1]
-                nsig1 = self.hdulist[2].data['nsigma'][ind1]
+#             if len(ind1) == 0:
+#                 s1 = h1 = 0
+#                 nsig1 = 0
+#             else:
+#                 s1 = self.hdulist[2].data['sigma'][ind1]
+#                 h1 = self.hdulist[2].data['height'][ind1]
+#                 nsig1 = self.hdulist[2].data['nsigma'][ind1]
 
-            if len(ind2) == 0:
-                s2 = h2 = 0
-                nsig2 = 0
-            else:
-                s2 = self.hdulist[2].data['sigma'][ind2]
-                h2 = self.hdulist[2].data['height'][ind2]
-                nsig2 = self.hdulist[2].data['nsigma'][ind2]
+#             if len(ind2) == 0:
+#                 s2 = h2 = 0
+#                 nsig2 = 0
+#             else:
+#                 s2 = self.hdulist[2].data['sigma'][ind2]
+#                 h2 = self.hdulist[2].data['height'][ind2]
+#                 nsig2 = self.hdulist[2].data['nsigma'][ind2]
 
-            strength = s1 * h1 + s2 * h2
-            nsig = max(nsig1, nsig2)
-        else:
-            ind = np.where(abs(self.hdulist[2].data['restWave'] - lam) < 1)[0]
+#             strength = s1 * h1 + s2 * h2
+#             nsig = max(nsig1, nsig2)
+#         else:
+#             ind = np.where(abs(self.hdulist[2].data['restWave'] - lam) < 1)[0]
 
-            if len(ind) == 0:
-                strength = 0
-                nsig = 0
-            else:
-                s = self.hdulist[2].data['sigma'][ind]
-                h = self.hdulist[2].data['height'][ind]
-                nsig = self.hdulist[2].data['nsigma'][ind]
-                strength = s * h
+#             if len(ind) == 0:
+#                 strength = 0
+#                 nsig = 0
+#             else:
+#                 s = self.hdulist[2].data['sigma'][ind]
+#                 h = self.hdulist[2].data['height'][ind]
+#                 nsig = self.hdulist[2].data['nsigma'][ind]
+#                 strength = s * h
 
-        return strength, nsig
+#         return strength, nsig
 
-    def lineratio_index(self, indicator='NII'):
-        """Return the line ratio index for the given galaxy.
+#     def lineratio_index(self, indicator='NII'):
+#         """Return the line ratio index for the given galaxy.
 
-        This is the index used in Vanderplas et al 2009, and makes use
-        of line-ratio fits from Kewley et al 2001
+#         This is the index used in Vanderplas et al 2009, and makes use
+#         of line-ratio fits from Kewley et al 2001
 
-        Parameters
-        ----------
-        indicator: string ['NII'|'OI'|'SII']
-            The emission line to use as an indicator
+#         Parameters
+#         ----------
+#         indicator: string ['NII'|'OI'|'SII']
+#             The emission line to use as an indicator
 
-        Returns
-        -------
-        cln: integer
-            The classification of the spectrum based on SDSS pipeline and
-            the line ratios.
+#         Returns
+#         -------
+#         cln: integer
+#             The classification of the spectrum based on SDSS pipeline and
+#             the line ratios.
 
-            0 : unknown (SPEC_CLN = 0)
-            1 : star (SPEC_CLN = 1)
-            2 : absorption galaxy (H-alpha seen in absorption)
-            3 : normal galaxy (no significant H-alpha emission or absorption)
-            4 : emission line galaxies (below line-ratio curve)
-            5 : narrow-line QSO (above line-ratio curve)
-            6 : broad-line QSO (SPEC_CLN = 3)
-            7 : Sky (SPEC_CLN = 4)
-            8 : Hi-z QSO (SPEC_CLN = 5)
-            9 : Late-type star (SPEC_CLN = 6)
-            10 : Emission galaxy (SPEC_CLN = 7)
+#             0 : unknown (SPEC_CLN = 0)
+#             1 : star (SPEC_CLN = 1)
+#             2 : absorption galaxy (H-alpha seen in absorption)
+#             3 : normal galaxy (no significant H-alpha emission or absorption)
+#             4 : emission line galaxies (below line-ratio curve)
+#             5 : narrow-line QSO (above line-ratio curve)
+#             6 : broad-line QSO (SPEC_CLN = 3)
+#             7 : Sky (SPEC_CLN = 4)
+#             8 : Hi-z QSO (SPEC_CLN = 5)
+#             9 : Late-type star (SPEC_CLN = 6)
+#             10 : Emission galaxy (SPEC_CLN = 7)
 
-        ratios: tuple
-            The line ratios used to compute this
-        """
-        assert indicator in ['NII', 'OI', 'SII']
+#         ratios: tuple
+#             The line ratios used to compute this
+#         """
+#         assert indicator in ['NII', 'OI', 'SII']
 
-        if self.spec_cln < 2:
-            return self.spec_cln, (0, 0)
-        elif self.spec_cln > 2:
-            return self.spec_cln + 3, (0, 0)
+#         if self.spec_cln < 2:
+#             return self.spec_cln, (0, 0)
+#         elif self.spec_cln > 2:
+#             return self.spec_cln + 3, (0, 0)
 
-        strength_Ha, nsig_Ha = self._get_line_strength('Ha')
-        strength_Hb, nsig_Hb = self._get_line_strength('Hb')
-        if nsig_Ha < 3 or nsig_Hb < 3:
-            return 3, (0, 0)
+#         strength_Ha, nsig_Ha = self._get_line_strength('Ha')
+#         strength_Hb, nsig_Hb = self._get_line_strength('Hb')
+#         if nsig_Ha < 3 or nsig_Hb < 3:
+#             return 3, (0, 0)
 
-        if strength_Ha < 0 or strength_Hb < 0:
-            return 2, (0, 0)
+#         if strength_Ha < 0 or strength_Hb < 0:
+#             return 2, (0, 0)
 
-        # all that's left is choosing between 4 and 5
-        # we do this based on line-ratios
-        strength_I, nsig_I = self._get_line_strength(indicator)
-        strength_OIII, nsig_OIII = self._get_line_strength('OIII')
+#         # all that's left is choosing between 4 and 5
+#         # we do this based on line-ratios
+#         strength_I, nsig_I = self._get_line_strength(indicator)
+#         strength_OIII, nsig_OIII = self._get_line_strength('OIII')
 
-        log_OIII_Hb = np.log10(strength_OIII / strength_Hb)
-        I_Ha = np.log10(strength_I / strength_Ha)
+#         log_OIII_Hb = np.log10(strength_OIII / strength_Hb)
+#         I_Ha = np.log10(strength_I / strength_Ha)
 
-        if indicator == 'NII':
-            if I_Ha >= 0.47 or log_OIII_Hb >= log_OIII_Hb_NII(I_Ha):
-                return 5, (I_Ha, log_OIII_Hb)
-            else:
-                return 4, (I_Ha, log_OIII_Hb)
+#         if indicator == 'NII':
+#             if I_Ha >= 0.47 or log_OIII_Hb >= log_OIII_Hb_NII(I_Ha):
+#                 return 5, (I_Ha, log_OIII_Hb)
+#             else:
+#                 return 4, (I_Ha, log_OIII_Hb)
 
-        elif indicator == 'OI':
-            if I_Ha >= -0.59 or log_OIII_Hb >= log_OIII_Hb_OI(I_Ha):
-                return 5, (I_Ha, log_OIII_Hb)
-            else:
-                return 4, (I_Ha, log_OIII_Hb)
+#         elif indicator == 'OI':
+#             if I_Ha >= -0.59 or log_OIII_Hb >= log_OIII_Hb_OI(I_Ha):
+#                 return 5, (I_Ha, log_OIII_Hb)
+#             else:
+#                 return 4, (I_Ha, log_OIII_Hb)
 
-        else:
-            if I_Ha >= 0.32 or log_OIII_Hb >= log_OIII_Hb_SII(I_Ha):
-                return 5, (I_Ha, log_OIII_Hb)
-            else:
-                return 4, (I_Ha, log_OIII_Hb)
-
-
-# ----------------------------------------------------------------------
-# Empirical fits from Kewley et al 2001
-def log_OIII_Hb_NII(log_NII_Ha, eps=0):
-    return 1.19 + eps + 0.61 / (log_NII_Ha - eps - 0.47)
+#         else:
+#             if I_Ha >= 0.32 or log_OIII_Hb >= log_OIII_Hb_SII(I_Ha):
+#                 return 5, (I_Ha, log_OIII_Hb)
+#             else:
+#                 return 4, (I_Ha, log_OIII_Hb)
 
 
-def log_OIII_Hb_OI(log_OI_Ha, eps=0):
-    return 1.33 + eps + 0.73 / (log_OI_Ha - eps + 0.59)
+# # ----------------------------------------------------------------------
+# # Empirical fits from Kewley et al 2001
+# def log_OIII_Hb_NII(log_NII_Ha, eps=0):
+#     return 1.19 + eps + 0.61 / (log_NII_Ha - eps - 0.47)
 
 
-def log_OIII_Hb_SII(log_SII_Ha, eps=0):
-    return 1.30 + eps + 0.72 / (log_SII_Ha - eps - 0.32)
+# def log_OIII_Hb_OI(log_OI_Ha, eps=0):
+#     return 1.33 + eps + 0.73 / (log_OI_Ha - eps + 0.59)
+
+
+# def log_OIII_Hb_SII(log_SII_Ha, eps=0):
+#     return 1.30 + eps + 0.72 / (log_SII_Ha - eps - 0.32)
