@@ -15,12 +15,14 @@ from astropy.io import fits
 from astropy import units as u
 from specutils.manipulation import FluxConservingResampler
 from specutils import Spectrum1D
+from specutils.spectra.spectral_axis import SpectralAxis
 
 from src.utils import get_data_home
 from src.wrangle.sdss.tools.download import download_with_progress_bar
 from src.wrangle.sdss.tools.sdss_fits import sdss_fits_url, sdss_fits_filename
-from src.utils import get_data_home
+from src.wrangle.sdss.tools.wavelengths import get_default_spectral_axis
 
+spectral_axis = get_default_spectral_axis()
 
 @define
 class QsoSpectraDataset:
@@ -99,7 +101,7 @@ class QsoSpectraDataset:
         spec.set_redshift_to(z)
         return spec
     
-    def get_shifted_and_rebinned_spec_l(self, df, spec_range=[1260,2400], redshift=0, cut_head_tail=False, data_release=None):
+    def get_shifted_and_rebinned_spec_l(self, df, spec_range=[1260,2400], redshift=0, cut_head_tail=False, clean_mask=True, data_release=None):
         fluxcon = FluxConservingResampler()
         if not data_release:
             data_release = self.data_release
@@ -110,14 +112,14 @@ class QsoSpectraDataset:
             spec.shift_spectrum_to(redshift=redshift)
             spec = spec[spec_range[0]*u.AA:spec_range[1]*u.AA]
             print(f'Processing spectrum {idx}')
-            if idx == 0:
-                spectral_axis = spec.spectral_axis
-            else:
-                if not np.array_equal(spec.spectral_axis, spectral_axis):
-                    print('Resampling axis')
-                    spec = fluxcon(spec, spectral_axis)
+
+            if not np.array_equal(spec.spectral_axis, spectral_axis):
+                print('Resampling axis')
+                spec = fluxcon(spec, spectral_axis)
             if cut_head_tail:
                 spec = spec[1:-1]
+            if clean_mask:
+                spec.mask = np.full((len(spec.spectral_axis)), False)
             spec_l.append(spec)
         return spec_l
 
